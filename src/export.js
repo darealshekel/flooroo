@@ -1,4 +1,4 @@
-import { Int16, Int32, write } from 'nbtify';
+import { Int8, Int16, Int32, write } from 'nbtify';
 import { BY_ID, PATTERNS, supportsBlock } from './catalog.js';
 import { getVersion } from './versions.js';
 
@@ -38,7 +38,10 @@ export function schematicData(floor, time = Date.now()) {
   return {
     Version: new Int32(6), SubVersion: new Int32(1), MinecraftDataVersion: new Int32(version.dataVersion),
     Metadata: { Name: name, Author: 'flooroo', Description: `Seed ${settings.seed}; ${settings.tile}-block tiles`, RegionCount: new Int32(1), TimeCreated: BigInt(time), TimeModified: BigInt(time), TotalBlocks: new Int32(total), TotalVolume: new Int32(states.length), EnclosingSize: size },
-    Regions: { Floor: { Position: vec(0, 0, 0), Size: size, BlockStatePalette: ids.map(id => ({ Name: `minecraft:${id}`, ...(BY_ID[id]?.properties ? { Properties: BY_ID[id].properties } : {}) })), BlockStates: packStates(states, ids.length), Entities: [], TileEntities: [], PendingBlockTicks: [], PendingFluidTicks: [] } },
+    Regions: { Floor: { Position: vec(0, 0, 0), Size: size, BlockStatePalette: ids.map(id => {
+      const state = BY_ID[id]?.exports?.[version.id] || BY_ID[id];
+      return { Name: `minecraft:${state?.id || id}`, ...(state?.properties && Object.keys(state.properties).length ? { Properties: state.properties } : {}) };
+    }), BlockStates: packStates(states, ids.length), Entities: [], TileEntities: [], PendingBlockTicks: [], PendingFluidTicks: [] } },
   };
 }
 
@@ -49,12 +52,20 @@ export function legacySchematicData(floor) {
   validateVersion(floor);
   const { width, depth, maxHeight, cells, materials, heights } = floor;
   const blocks = new Int8Array(width * depth * maxHeight), data = new Int8Array(blocks.length);
+  const tileEntities = [];
   for (const id of floor.counts.keys()) if (!BY_ID[id].legacy) throw new Error(`No legacy mapping for ${id}.`);
   for (let y = 0; y < maxHeight; y++) for (let z = 0; z < depth; z++) for (let x = 0; x < width; x++) {
     const i = z * width + x, out = (y * depth + z) * width + x;
-    if (y < heights[i]) [blocks[out], data[out]] = BY_ID[materials[cells[i]]].legacy;
+    if (y < heights[i]) {
+      const block = BY_ID[materials[cells[i]]];
+      [blocks[out], data[out]] = block.legacy;
+      if (block.legacyEntity) {
+        const fields = Object.fromEntries(Object.entries(block.legacyEntity).map(([key,value]) => [key, typeof value === 'number' ? (['SkullType','Rot'].includes(key) ? new Int8(value) : new Int32(value)) : value]));
+        tileEntities.push({ ...fields, x: new Int32(x), y: new Int32(y), z: new Int32(z) });
+      }
+    }
   }
-  return { Materials: 'Alpha', Width: new Int16(width), Height: new Int16(maxHeight), Length: new Int16(depth), Blocks: blocks, Data: data, Entities: [], TileEntities: [], WEOriginX: new Int32(0), WEOriginY: new Int32(0), WEOriginZ: new Int32(0), WEOffsetX: new Int32(0), WEOffsetY: new Int32(0), WEOffsetZ: new Int32(0) };
+  return { Materials: 'Alpha', Width: new Int16(width), Height: new Int16(maxHeight), Length: new Int16(depth), Blocks: blocks, Data: data, Entities: [], TileEntities: tileEntities, WEOriginX: new Int32(0), WEOriginY: new Int32(0), WEOriginZ: new Int32(0), WEOffsetX: new Int32(0), WEOffsetY: new Int32(0), WEOffsetZ: new Int32(0) };
 }
 export async function exportLegacySchematic(floor) {
   return write(legacySchematicData(floor), { endian: 'big', compression: 'gzip', rootName: 'Schematic' });

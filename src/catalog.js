@@ -58,18 +58,31 @@ for (const entry of vanillaBlocks) {
   let b = BLOCKS.find(b => b.id === entry.id);
   if (!b) { b = block(entry.id, textureColors[entry.id] || '#888888'); BLOCKS.push(b); }
   Object.assign(b, entry);
-  b.transparent = ['glass', 'tinted_glass', 'ice'].includes(b.id) || b.id.endsWith('_stained_glass');
+  if (/^(stripped_cherry_|cherry_)/.test(b.id)) b.since = '1.20.1';
+  if (/^(trial_spawner|vault|crafter|heavy_core|tuff_wall)$/.test(b.id)) b.since = '1.21';
+  if (b.id === 'petrified_oak_slab') { b.since = '1.12.2'; b.legacy = [44, 2]; b.versions = undefined; }
+  if (b.id === 'smooth_stone_slab') { b.exports = { '1.13.2': { id: 'stone_slab', properties: b.properties } }; }
+  b.transparent = ['glass', 'tinted_glass', 'ice', 'water', 'nether_portal'].includes(b.id) || b.id.endsWith('_stained_glass');
   b.group = entry.shape === 'slab' ? 'Slabs' : entry.shape === 'stairs' ? 'Stairs'
     : entry.id.endsWith('_glazed_terracotta') ? 'Glazed terracotta'
     : /(^|_)glass$/.test(entry.id) ? 'Glass'
     : entry.id.endsWith('_concrete_powder') ? 'Concrete powder'
     : /(_log|_wood|_stem|_hyphae)$/.test(entry.id) ? 'Logs & wood'
+    : /_leaves$/.test(entry.id) ? 'Leaves'
+    : /carpet$/.test(entry.id) ? 'Carpets'
+    : /_wall$|_fence$|_fence_gate$|_bars$/.test(entry.id) ? 'Walls & fences'
+    : /trapdoor|_door$/.test(entry.id) ? 'Doors & trapdoors'
+    : /pressure_plate|button|rail|redstone|repeater|comparator|piston|lever|observer|daylight/.test(entry.id) ? 'Redstone'
+    : /flower|sapling|tulip|orchid|dandelion|poppy|fern|grass$|bush|petal|vine|roots|fungus|mushroom|wheat|crop|carrots|potatoes/.test(entry.id) ? 'Plants'
+    : /torch|lantern|candle|campfire/.test(entry.id) ? 'Lighting'
+    : /barrier|command_block|structure|jigsaw|spawner|vault|test_|light$/.test(entry.id) ? 'Technical'
+    : /chest|furnace|table|hopper|shulker|barrel|smoker|loom|anvil|composter|grindstone/.test(entry.id) ? 'Utility'
     : b.group || (/copper/.test(entry.id) ? 'Metals & gems' : 'Stone & natural');
 }
 export const BY_ID = Object.fromEntries(BLOCKS.map(b => [b.id, b]));
 const RGB = Object.fromEntries(BLOCKS.map(b => [b.id, b.color.match(/[a-f\d]{2}/gi).map(n => parseInt(n, 16))]));
 const colorDistance = (a, b) => RGB[a].reduce((sum, n, i) => sum + (n - RGB[b][i]) ** 2, 0);
-export const supportsBlock = (id, version) => typeof id === 'string' && Object.hasOwn(BY_ID, id) && atLeast(getVersion(version).id, BY_ID[id].since);
+export const supportsBlock = (id, version) => typeof id === 'string' && Object.hasOwn(BY_ID, id) && atLeast(getVersion(version).id, BY_ID[id].since) && (!BY_ID[id].versions || BY_ID[id].versions.includes(getVersion(version).id));
 export const availableBlocks = (version, allowed = null) => BLOCKS.filter(b => supportsBlock(b.id, version) && (!allowed || allowed.includes(b.id)));
 export function closestBlock(id, candidates) {
   const original = BY_ID[id];
@@ -96,6 +109,13 @@ export function convertVersionBlocks(input) {
   return s;
 }
 export const ROLES = ['Foundation', 'Outline', 'Main motif', 'Accent', 'Inlay', 'Light', 'Trim'];
+
+export function movePaletteSlot(materials, from, to) {
+  if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < 0 || from >= materials.length || to >= materials.length || from === to) return materials;
+  const result = [...materials];
+  result.splice(to, 0, result.splice(from, 1)[0]);
+  return result;
+}
 export const PALETTES = [
   { id: 'obsidian', name: 'Moonstone', colors: ['deepslate_tiles', 'polished_blackstone', 'polished_andesite', 'quartz_block', 'deepslate_bricks', 'sea_lantern', 'light_gray_concrete'] },
   { id: 'crimson', name: 'Crimson forge', colors: ['red_nether_bricks', 'nether_bricks', 'red_terracotta', 'deepslate_tiles', 'polished_blackstone', 'shroomlight', 'red_concrete'] },
@@ -153,7 +173,7 @@ export function randomPalette(seed, version = '1.21', allowed = null) {
 
 export function nextDesign(input, seed) {
   const s = normalizeSettings(input);
-  return normalizeSettings({ ...s, seed, pattern: 'field', fieldVersion: 2,
+  return normalizeSettings({ ...s, seed, pattern: 'field', reference: null, fieldVersion: 2,
     editLayer: protectedLayer(s.editLayer),
     layout: LAYOUTS.some(([id]) => id === s.layout) ? s.layout : 'auto',
     ...(s.paletteMode === 'random' ? { palette: 'random', materials: randomPalette(seed, s.version, s.allowedBlocks) } : {}),
@@ -167,7 +187,11 @@ export function normalizeSettings(input = {}) {
   s.allowedBlocks = Array.isArray(input.allowedBlocks) ? [...new Set(input.allowedBlocks.filter(id => supportsBlock(id, s.version)))].slice(0, BLOCK_POOL_LIMITS.max) : null;
   if (s.allowedBlocks?.length === 1) s.allowedBlocks.push(availableBlocks(s.version).find(b => !s.allowedBlocks.includes(b.id)).id);
   if (s.allowedBlocks?.length === 0) s.allowedBlocks = null;
-  s.pattern = PATTERNS.some(p => p.id === s.pattern) ? s.pattern : DEFAULTS.pattern;
+  const ref = input.reference;
+  s.reference = ref && TILE_SIZES.includes(ref.size) && Array.isArray(ref.cells) && ref.cells.length === ref.size ** 2 && ref.cells.every(n => Number.isInteger(n) && n >= 0 && n < 7)
+    ? { size: ref.size, cells: [...ref.cells], mode: ref.mode === 'inspired' ? 'inspired' : 'recreate' } : null;
+  s.pattern = s.pattern === 'reference' && s.reference ? 'reference' : PATTERNS.some(p => p.id === s.pattern) ? s.pattern : DEFAULTS.pattern;
+  if (s.pattern !== 'reference') s.reference = null;
   s.fieldVersion = Number(s.fieldVersion) === 1 ? 1 : 2;
   s.palette = s.palette === 'random' || PALETTES.some(p => p.id === s.palette) ? s.palette : DEFAULTS.palette;
   s.paletteMode = s.paletteMode === 'random' ? 'random' : 'keep';

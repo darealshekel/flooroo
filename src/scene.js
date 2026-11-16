@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { BY_ID } from './catalog.js';
-import { blockGeometry } from './block-geometry.js';
+import { blockGeometry, modelGeometry } from './block-geometry.js';
 
 export class FloorScene {
   constructor(container, onZoom) {
@@ -31,21 +31,23 @@ export class FloorScene {
     const matrix = new THREE.Matrix4();
     for (const [id, indices] of groups) {
       const block = BY_ID[id];
-      const materials = (block.faces || Array(6).fill(block.texture)).map(path => {
-        if (this.materials.has(path)) return this.materials.get(path);
+      const geometry = block.models ? (this.geometries[id] ||= modelGeometry(block.models)) : this.geometries[block.shape || 'cube'];
+      const materials = (geometry.userData.textures || block.faces || Array(6).fill(block.texture)).map(path => {
+        const key = `${path}:${!!block.transparent}:${!!block.models}`;
+        if (this.materials.has(key)) return this.materials.get(key);
         const source = textures[path];
         const image = document.createElement('canvas'); image.width = source.width; image.height = source.width;
         image.getContext('2d').drawImage(source, 0, 0, source.width, source.width, 0, 0, source.width, source.width);
         const texture = new THREE.CanvasTexture(image); texture.magFilter = THREE.NearestFilter; texture.minFilter = THREE.NearestFilter; texture.colorSpace = THREE.SRGBColorSpace;
-        const material = new THREE.MeshLambertMaterial({ map: texture, alphaTest: .1, transparent: block.transparent });
-        this.materials.set(path, material);
+        const material = new THREE.MeshLambertMaterial({ map: texture, alphaTest: .1, transparent: block.transparent, side: block.models ? THREE.DoubleSide : THREE.FrontSide });
+        this.materials.set(key, material);
         return material;
       });
       // Solid columns have no visible internal faces; partial shapes keep their gaps.
       const solid = block.shape === 'cube' || !block.shape;
       const count = solid ? indices.length : indices.reduce((sum, i) => sum + (data.heights?.[i] || 1), 0);
       const material = materials.every(m => m === materials[0]) ? materials[0] : materials;
-      const mesh = new THREE.InstancedMesh(this.geometries[block.shape || 'cube'], material, count);
+      const mesh = new THREE.InstancedMesh(geometry, material, count);
       let j = 0;
       indices.forEach(i => {
         const h = data.heights?.[i] || 1;

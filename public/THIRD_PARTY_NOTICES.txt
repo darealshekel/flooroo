@@ -19,6 +19,9 @@ Attribution: PrismarineJS/minecraft-data contributors.
 
 MIT-licensed components
 ----------------------
+quantize 1.0.2: Copyright (c) 2014 Olivier Lesnicki
+https://github.com/olivierlesnicki/quantize
+
 Three.js 0.156.1: Copyright (c) 2010-2023 three.js authors
 https://github.com/mrdoob/three.js
 

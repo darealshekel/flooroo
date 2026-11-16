@@ -6,6 +6,9 @@ import { fileURLToPath } from 'node:url';
 import { read } from 'nbtify';
 import { normalizeSettings } from '../src/catalog.js';
 import { composeField } from '../src/fields.js';
+import { checkReferenceImport } from './reference-browser.mjs';
+import { checkPaletteOrder } from './palette-order-browser.mjs';
+import { checkExpandedCatalog } from './expanded-catalog-browser.mjs';
 
 const output = new URL('../test-results/', import.meta.url);
 await mkdir(output, { recursive: true });
@@ -18,7 +21,7 @@ let browser;
 try {
   browser = await chromium.launch({ headless: true });
   for (const [name, width, height] of [['desktop', 1440, 1000], ['mobile', 390, 844]]) {
-    const context = await browser.newContext({ viewport: { width, height } });
+    const context = await browser.newContext({ viewport: { width, height }, hasTouch: name === 'mobile' });
     const page = await context.newPage();
     page.on('pageerror', error => problems.push(error.message));
     page.on('response', response => { if (response.status() >= 400) problems.push(`${response.status()} ${response.url()}`); });
@@ -127,6 +130,9 @@ try {
     await page.screenshot({ path: fileURLToPath(new URL(`pages-${name}-3d.png`, output)), fullPage: true });
     await page.reload();
     await page.locator('#loading').waitFor({ state: 'hidden' });
+    await checkReferenceImport(page, name);
+    await checkPaletteOrder(page, name);
+    await checkExpandedCatalog(page, name);
     assert.deepEqual(problems, []);
     await context.close();
     console.log(`${name}: all four Everything styles, saved-design compatibility, built assets, textures, generation, undo, 528-wide export, 3D, reload passed`);

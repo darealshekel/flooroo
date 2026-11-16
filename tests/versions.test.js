@@ -94,13 +94,13 @@ test('all legacy block IDs, dye metadata, orientation and raised columns round t
 });
 
 test('every modern catalog block survives palette packing, including new block banks', async () => {
-  const cells = Array(32 ** 2).fill(0);
+  const size = 48, cells = Array(size ** 2).fill(0);
   BLOCKS.forEach((b, i) => { cells[i] = encodeCell(i, i % 3 + 1, i % 2 === 0); });
-  const floor = generateFloor({ version: '26.3', tile: 32, width: 32, depth: 32, border: 0, editLayer: { size: 32, cells } });
+  const floor = generateFloor({ version: '26.3', tile: size, width: size, depth: size, border: 0, editLayer: { size, cells } });
   const { data } = await read(await exportLitematic(floor));
   const region = data.Regions.Floor, bits = BigInt(Math.ceil(Math.log2(region.BlockStatePalette.length))), mask = (1n << bits) - 1n;
   for (let y = 0; y < 3; y++) for (let i = 0; i < BLOCKS.length; i++) {
-    const bit = BigInt(y * 1024 + i) * bits, word = Number(bit / 64n), offset = bit % 64n;
+    const bit = BigInt(y * size ** 2 + i) * bits, word = Number(bit / 64n), offset = bit % 64n;
     let value = BigInt.asUintN(64, region.BlockStates[word]) >> offset;
     if (offset + bits > 64n) value |= BigInt.asUintN(64, region.BlockStates[word + 1]) << (64n - offset);
     assert.equal(region.BlockStatePalette[Number(value & mask)].Name, y < i % 3 + 1 ? `minecraft:${BLOCKS[i].id}` : 'minecraft:air');

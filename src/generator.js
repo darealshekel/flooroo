@@ -30,6 +30,11 @@ export function generateTile(input) {
 }
 
 function generateBaseTile(s) {
+  if (s.pattern === 'reference') {
+    const n = s.tile, ref = s.reference;
+    const cells = Uint8Array.from({ length: n * n }, (_, i) => ref.cells[Math.min(ref.size - 1, Math.floor(Math.floor(i / n) * ref.size / n)) * ref.size + Math.min(ref.size - 1, Math.floor((i % n) * ref.size / n))]);
+    return { width: n, depth: n, cells, settings: s, plan: { name: ref.mode === 'inspired' ? 'Image-inspired pattern' : 'Recreated image' } };
+  }
   if (s.pattern === 'field') return generateField(s);
   if (s.pattern === 'generated') return generateOrnament(s);
   const n = s.tile, c = (n - 1) / 2, scale = n / 64;

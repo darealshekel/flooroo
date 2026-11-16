@@ -1,5 +1,6 @@
 import { createIcons, Sun, Moon, Pickaxe, Download, Undo2, Redo2, Shuffle, ChevronDown, Plus, Minus, Maximize, Grid2X2, Box, Layers, ArrowUpRight, X, Check, Image as ImageIcon, FileJson, FolderOpen, Search, RotateCcw, FileDown, LoaderCircle, Hand, Paintbrush, Minus as LineIcon, PaintBucket, Replace, ShieldCheck, ShieldOff, Eraser, Eye, Trash2 } from 'lucide';
-import { BLOCKS, BY_ID, ROLES, PALETTES, PATTERNS, STYLES, LAYOUTS, TILE_SIZES, FLOOR_SIZE_LIMITS, BLOCK_POOL_LIMITS, normalizeSettings, randomPalette, nextDesign, availableBlocks, supportsBlock, compatiblePalette, convertVersionBlocks } from './catalog.js';
+import { BLOCKS, BY_ID, ROLES, PALETTES, PATTERNS, STYLES, LAYOUTS, TILE_SIZES, FLOOR_SIZE_LIMITS, BLOCK_POOL_LIMITS, normalizeSettings, randomPalette, nextDesign, availableBlocks, supportsBlock, compatiblePalette, convertVersionBlocks, movePaletteSlot } from './catalog.js';
+import { bindPaletteReorder } from './palette-reorder.js';
 import { VERSIONS, getVersion } from './versions.js';
 import { assetUrl } from './assets.js';
 import { generateFloor, generateTile } from './generator.js';
@@ -48,7 +49,7 @@ $('app').innerHTML = `
   </header>
   <main class="workspace">
     <aside class="settings-panel" aria-label="Floor settings">
-      <div class="generate-actions"><button id="generate" class="primary-button generate-button">${icon('shuffle')}Generate floor</button><button id="explore" class="icon-button" title="Explore six alternatives" aria-label="Explore alternatives">${icon('grid-2-x2')}</button></div>
+      <div class="generate-actions"><button id="generate" class="primary-button generate-button">${icon('shuffle')}Generate floor</button><button id="reference-open" class="icon-button" title="Image to floor" aria-label="Image to floor">${icon('image')}</button><button id="explore" class="icon-button" title="Explore six alternatives" aria-label="Explore alternatives">${icon('grid-2-x2')}</button></div>
       <div class="inspector-tabs" role="tablist" aria-label="Floor settings">
         ${['pattern', 'blocks', 'materials'].map((id, i) => `<button id="tab-${id}" role="tab" aria-controls="panel-${id}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}">${id[0].toUpperCase() + id.slice(1)}</button>`).join('')}
       </div>
@@ -74,7 +75,8 @@ $('app').innerHTML = `
       <section class="control-section palette-section"><div class="section-heading"><h2>Block palette</h2><span id="palette-type">7 materials</span></div>
         <div class="setting-row"><label for="version">Java version</label><select id="version">${VERSIONS.map(v => `<option value="${v.id}">${v.id}</option>`).join('')}</select></div>
         <div class="palette-choice"><label class="sr-only" for="palette">Palette</label><select id="palette"><option value="random">Random palette</option>${PALETTES.map(p => `<option value="${p.id}">${p.name}</option>`).join('')}</select><button id="random-palette" class="icon-button" title="Randomize palette now" aria-label="Randomize palette now">${icon('shuffle')}</button></div>
-        <div class="palette-swatches" id="swatches"></div>
+        <div class="palette-swatches" id="swatches" role="group" aria-label="Palette block positions"></div>
+        <span id="palette-move-status" class="sr-only" role="status"></span>
         <button id="block-library" class="explore-button">${icon('grid-2-x2')}<span>Choose blocks</span><span id="block-pool-count"></span></button>
         <fieldset class="palette-behavior"><legend>On generate</legend><div class="segmented" role="group" aria-label="Palette on generate"><button data-palette-mode="keep">Keep palette</button><button data-palette-mode="random">Random palette</button></div></fieldset>
         <div class="palette-save"><input id="palette-name" maxlength="40" aria-label="Palette name" placeholder="Palette name"><button id="save-palette" class="icon-button" title="Save current palette" aria-label="Save current palette">${icon('plus')}</button><button id="delete-palette" class="icon-button" title="Delete saved palette" aria-label="Delete saved palette" disabled>${icon('trash-2')}</button></div>
@@ -111,7 +113,7 @@ $('app').innerHTML = `
     </section>
   </main>
   <dialog id="explore-dialog"><div class="dialog-heading"><h2>Explore designs</h2><button class="icon-button" data-close="explore-dialog" aria-label="Close design explorer">${icon('x')}</button></div><div class="design-candidates" id="design-candidates"></div><button id="more-designs" class="explore-button">${icon('shuffle')}Generate six more</button></dialog>
-  <dialog id="material-dialog"><div class="dialog-heading"><div><span class="eyebrow" id="material-role"></span><h2>Choose a block</h2></div><button class="icon-button" data-close="material-dialog" aria-label="Close block picker">${icon('x')}</button></div><div class="search-field">${icon('search')}<input id="block-search" placeholder="Search blocks" aria-label="Search blocks"></div><div class="block-picker" id="block-picker"></div></dialog>
+  <dialog id="material-dialog"><div class="dialog-heading"><div><span class="eyebrow" id="material-role"></span><h2>Choose a block</h2></div><button class="icon-button" data-close="material-dialog" aria-label="Close block picker">${icon('x')}</button></div><div id="palette-position-row" class="setting-row palette-position"><label for="palette-position">Position</label><select id="palette-position">${ROLES.map((role, i) => `<option value="${i}">${i + 1}. ${role}</option>`).join('')}</select></div><div class="search-field">${icon('search')}<input id="block-search" placeholder="Search blocks" aria-label="Search blocks"></div><div class="block-picker" id="block-picker"></div></dialog>
   <dialog id="export-dialog"><div class="dialog-heading"><h2>Export floor</h2><button class="icon-button" data-close="export-dialog" aria-label="Close export options">${icon('x')}</button></div><div class="export-summary" id="export-summary"></div><button id="export-litematic" class="export-option"><span class="export-icon">${icon('box')}</span><span><strong>Litematica schematic</strong><small>.litematic &middot; Java 1.21+</small></span>${icon('arrow-up-right')}</button><button id="export-png" class="export-option"><span class="export-icon">${icon('image')}</span><span><strong>Top-down image</strong><small>.png &middot; Textured block plan</small></span>${icon('arrow-up-right')}</button><button id="export-csv" class="export-option"><span class="export-icon">${icon('file-down')}</span><span><strong>Material list</strong><small>.csv &middot; Quantities, stacks &amp; shulkers</small></span>${icon('arrow-up-right')}</button><div class="export-note">Exports the entire floor, including the border and raised details.</div></dialog>
   <input type="file" id="import-file" accept=".json,application/json" hidden>
   <dialog id="library-dialog"><div class="dialog-heading"><div><span class="eyebrow" id="library-version"></span><h2>Block selection</h2></div><button class="icon-button" data-close="library-dialog" aria-label="Close block selection">${icon('x')}</button></div>
@@ -224,7 +226,7 @@ function syncControls() {
 }
 function renderMaterials() {
   const list = [...floor.counts].sort((a, b) => b[1] - a[1]);
-  $('swatches').innerHTML = settings.materials.map((id, i) => `<button data-role="${i}" title="${ROLES[i]}: ${BY_ID[id].name}" aria-label="Change ${ROLES[i].toLowerCase()} block: ${BY_ID[id].name}"><img src="${assetUrl(BY_ID[id].texture)}" alt=""><span>${i + 1}</span></button>`).join('');
+  $('swatches').innerHTML = settings.materials.map((id, i) => `<button data-role="${i}" title="${ROLES[i]}: ${BY_ID[id].name}. Drag to reorder; click to edit. Alt + Left/Right to move." aria-label="Change ${ROLES[i].toLowerCase()} block: ${BY_ID[id].name}" aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight"><img src="${assetUrl(BY_ID[id].texture)}" alt="" draggable="false"><span>${i + 1}</span></button>`).join('');
   $('material-list').innerHTML = list.map(([id, count]) => `<div class="material-row"><img src="${assetUrl(BY_ID[id].texture)}" alt=""><div class="material-name"><strong>${BY_ID[id].name}</strong><span>${Math.floor(count / 64)} stacks${count % 64 ? ` + ${count % 64}` : ''}</span></div><span class="material-quantity">${fmt(count)}</span></div>`).join('');
   $('total-blocks').textContent = fmt(floor.total);
   $('floor-total-summary').textContent = `${fmt(floor.total)} blocks`;
@@ -238,6 +240,7 @@ function renderMaterials() {
   $('palette-type').textContent = !preset ? 'Generated' : settings.materials.every((id, i) => id === preset.colors[i]) ? '7 slots' : 'Custom';
 }
 function update(record = true) {
+  cancelPaletteDrag();
   settings = normalizeSettings(settings);
   if (record) {
     const json = JSON.stringify(settings);
@@ -253,10 +256,20 @@ function update(record = true) {
   syncControls(); renderMaterials(); updatePreview();
   const plan = floor.tile.plan;
   $('design-name').textContent = plan?.name || PATTERNS.find(p => p.id === settings.pattern).name;
-  $('recipe-summary').textContent = settings.pattern === 'field' ? `${LAYOUTS.find(([id]) => id === plan.layout)[1]} / ${settings.weirdnessEnabled ? settings.weirdness + '% weirdness' : 'Weirdness off'}` : 'Imported legacy design';
+  $('recipe-summary').textContent = settings.pattern === 'field' ? `${LAYOUTS.find(([id]) => id === plan.layout)[1]} / ${settings.weirdnessEnabled ? settings.weirdness + '% weirdness' : 'Weirdness off'}` : settings.pattern === 'reference' ? plan.name : 'Imported legacy design';
   $('dimension-tag').textContent = `${settings.width} × ${settings.depth}`;
-  $('geometry-status').textContent = `${settings.tile}-block tile · ${settings.symmetry}-fold symmetry`;
+  $('geometry-status').textContent = settings.pattern === 'reference' ? `${settings.tile}-block image tile` : `${settings.tile}-block tile · ${settings.symmetry}-fold symmetry`;
 }
+
+$('reference-open').addEventListener('click', async () => {
+  if (!Object.keys(textures).length) return toast('Block textures are still loading.');
+  $('reference-open').disabled = true;
+  try {
+    const { openReferenceDialog } = await import('./reference-dialog.js');
+    openReferenceDialog({ settings, textures, icon, renderIcons, apply: result => { settings = result; update(); toast('Image design applied. Undo is available.'); } });
+  } catch (error) { console.error(error); toast('Image import could not load. Your current design is unchanged.'); }
+  finally { $('reference-open').disabled = false; }
+});
 
 function syncEditor() {
   $('editor-options').hidden = tool === 'pan';
@@ -370,7 +383,7 @@ $('delete-palette').addEventListener('click', () => {
 });
 function libraryMatches() {
   const term = $('library-search').value.trim().toLowerCase(), group = $('library-group').value;
-  return availableBlocks(settings.version).filter(b => (!group || b.group === group) && `${b.name} ${b.id}`.toLowerCase().includes(term));
+  return availableBlocks(settings.version).filter(b => (!group || b.group === group) && `${b.name} ${b.id} ${(b.aliases || []).join(' ')}`.toLowerCase().includes(term));
 }
 function updateSelectionCount() {
   $('selection-count').textContent = `${selectedBlocks.size} / ${BLOCK_POOL_LIMITS.max} selected`;
@@ -500,12 +513,31 @@ $('fit').addEventListener('click', () => { if (view === '3d') { scene.fit(); $('
 $('grid').addEventListener('click', () => { preview.grid = !preview.grid; $('grid').setAttribute('aria-pressed', preview.grid); preview.draw(); });
 
 function blockPicker() {
+  $('palette-position-row').hidden = pickerTarget !== 'palette';
+  $('palette-position').value = String(roleToEdit);
   const term = $('block-search').value.trim().toLowerCase();
-  const matches = availableBlocks(settings.version).filter(b => `${b.name} ${b.id}`.toLowerCase().includes(term));
+  const matches = availableBlocks(settings.version).filter(b => `${b.name} ${b.id} ${(b.aliases || []).join(' ')}`.toLowerCase().includes(term));
   const selected = pickerTarget === 'paint' ? paintBlock : settings.materials[roleToEdit];
   $('block-picker').innerHTML = matches.length ? matches.map(b => `<button data-block="${b.id}" aria-pressed="${selected === b.id}"><img class="block-${b.shape || 'cube'}" src="${assetUrl(b.texture)}" alt=""><span>${b.name}</span>${selected === b.id ? icon('check') : ''}</button>`).join('') : '<p class="empty-result">No matching blocks.</p>';
   renderIcons();
 }
+function movePaletteBlock(from, to, focus = true) {
+  const materials = movePaletteSlot(settings.materials, from, to);
+  if (materials === settings.materials) return;
+  settings.materials = materials;
+  update();
+  $('palette-move-status').textContent = `${BY_ID[materials[to]].name} moved to position ${to + 1}, ${ROLES[to]}.`;
+  if (focus) $('swatches').querySelector(`[data-role="${to}"]`).focus({ preventScroll: true });
+}
+const cancelPaletteDrag = bindPaletteReorder($('swatches'), movePaletteBlock);
+$('palette-position').addEventListener('change', event => {
+  if (pickerTarget !== 'palette') return;
+  const to = Number(event.target.value);
+  movePaletteBlock(roleToEdit, to, false);
+  roleToEdit = to;
+  $('material-role').textContent = ROLES[to];
+  blockPicker();
+});
 $('swatches').addEventListener('click', e => {
   const button = e.target.closest('[data-role]'); if (!button) return;
   pickerTarget = 'palette';

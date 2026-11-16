@@ -4,7 +4,7 @@ import { assetUrl } from './assets.js';
 
 export async function loadTextures() {
   const textures = {};
-  const paths = new Set(BLOCKS.flatMap(block => [block.texture, ...(block.faces || [])]));
+  const paths = new Set(BLOCKS.flatMap(block => [block.texture, ...(block.faces || []), ...(block.models || []).flatMap(model => model.elements.flatMap(element => Object.values(element.faces).map(face => face.texture)))]));
   await Promise.all([...paths].map(async path => {
     const image = new Image();
     image.src = assetUrl(path);
