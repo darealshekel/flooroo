@@ -17,7 +17,9 @@ let settings;
 try {
   const saved = JSON.parse(localStorage.getItem('mmm-floor-v3'));
   const previous = JSON.parse(localStorage.getItem('mmm-floor-v2'));
-  settings = normalizeSettings(saved || (previous ? { ...previous, pattern: 'field', layout: 'auto' } : undefined));
+  // Existing drafts predate seeded style selection; preserve them until regeneration.
+  settings = normalizeSettings(saved ? { ...saved, fieldVersion: saved.fieldVersion ?? 1 }
+    : previous ? { ...previous, pattern: 'field', fieldVersion: 1, layout: 'auto' } : undefined);
 } catch { settings = normalizeSettings(); }
 let floor, textures = {}, scene, view = 'top', scope = 'floor', roleToEdit = 0;
 let candidateSettings = [];
@@ -429,7 +431,7 @@ for (const id of ['weirdness', 'shapeScale', 'fineDetail', 'emptySpace']) {
   $(id).addEventListener('change', () => { clearTimeout(geometryTimer); update(); });
 }
 $('weirdness-enabled').addEventListener('change', e => { clearTimeout(geometryTimer); settings.weirdnessEnabled = e.target.checked; settings.pattern = 'field'; update(); });
-for (const id of ['style', 'layout']) $(id).addEventListener('change', e => { settings[id] = e.target.value; settings.pattern = 'field'; update(); });
+for (const id of ['style', 'layout']) $(id).addEventListener('change', e => { settings[id] = e.target.value; settings.pattern = 'field'; if (id === 'style') settings.fieldVersion = 2; update(); });
 for (const attr of ['symmetry', 'detail']) document.querySelectorAll(`[data-${attr}]`).forEach(button => button.addEventListener('click', () => { settings[attr] = Number(button.dataset[attr]); update(); }));
 function newDesign() {
   settings = nextDesign(settings, freshSeed());
@@ -545,7 +547,7 @@ $('import-file').addEventListener('change', async e => {
     if (file.size > 1_000_000) throw new Error('File too large');
     const data = JSON.parse(await file.text());
     if (!['flooroo', 'mmm-floor-studio'].includes(data.format) || ![1, 2, 3, 4].includes(data.version) || !data.settings || typeof data.settings !== 'object' || Array.isArray(data.settings)) throw new Error('Invalid design');
-    settings = normalizeSettings(data.settings); preview.fit(); update(); toast('Design opened.');
+    settings = normalizeSettings({ ...data.settings, fieldVersion: data.settings.fieldVersion ?? 1 }); preview.fit(); update(); toast('Design opened.');
   } catch { toast('Could not open this file. Choose a flooroo or Floor Studio JSON design.'); }
   finally { e.target.value = ''; }
 });

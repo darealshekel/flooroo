@@ -116,7 +116,7 @@ export const LAYOUTS = [ ['auto', 'Automatic'], ['contours', 'Contour fields'], 
 export const TILE_SIZES = [32, 48, 64, 96, 128, 192];
 export const FLOOR_SIZE_LIMITS = { min: 16, max: 1024 };
 export const BLOCK_POOL_LIMITS = { min: 2, max: 16 };
-export const DEFAULTS = { pattern: 'field', style: 'any', layout: 'auto', palette: 'amethyst', paletteMode: 'keep', weirdness: 25, weirdnessEnabled: true, shapeScale: 100, fineDetail: 100, emptySpace: 0, width: 256, depth: 256, tile: 128, detail: 3, symmetry: 8, border: 3, raised: false, seed: '104', materials: null, editLayer: null };
+export const DEFAULTS = { pattern: 'field', fieldVersion: 2, style: 'any', layout: 'auto', palette: 'amethyst', paletteMode: 'keep', weirdness: 25, weirdnessEnabled: true, shapeScale: 100, fineDetail: 100, emptySpace: 0, width: 256, depth: 256, tile: 128, detail: 3, symmetry: 8, border: 3, raised: false, seed: '104', materials: null, editLayer: null };
 
 export function randomPalette(seed, version = '1.21', allowed = null) {
   const random = randomSource(`palette-v2:${seed}`);
@@ -153,7 +153,7 @@ export function randomPalette(seed, version = '1.21', allowed = null) {
 
 export function nextDesign(input, seed) {
   const s = normalizeSettings(input);
-  return normalizeSettings({ ...s, seed, pattern: 'field',
+  return normalizeSettings({ ...s, seed, pattern: 'field', fieldVersion: 2,
     editLayer: protectedLayer(s.editLayer),
     layout: LAYOUTS.some(([id]) => id === s.layout) ? s.layout : 'auto',
     ...(s.paletteMode === 'random' ? { palette: 'random', materials: randomPalette(seed, s.version, s.allowedBlocks) } : {}),
@@ -168,6 +168,7 @@ export function normalizeSettings(input = {}) {
   if (s.allowedBlocks?.length === 1) s.allowedBlocks.push(availableBlocks(s.version).find(b => !s.allowedBlocks.includes(b.id)).id);
   if (s.allowedBlocks?.length === 0) s.allowedBlocks = null;
   s.pattern = PATTERNS.some(p => p.id === s.pattern) ? s.pattern : DEFAULTS.pattern;
+  s.fieldVersion = Number(s.fieldVersion) === 1 ? 1 : 2;
   s.palette = s.palette === 'random' || PALETTES.some(p => p.id === s.palette) ? s.palette : DEFAULTS.palette;
   s.paletteMode = s.paletteMode === 'random' ? 'random' : 'keep';
   s.weirdness = number(s.weirdness, DEFAULTS.weirdness, 0, 100);

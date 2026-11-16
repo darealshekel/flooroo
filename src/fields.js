@@ -1,4 +1,4 @@
-import { LAYOUTS } from './catalog.js';
+import { LAYOUTS, STYLES } from './catalog.js';
 import { randomSource } from './random.js';
 
 const TAU = Math.PI * 2;
@@ -6,19 +6,23 @@ const fract = value => value - Math.floor(value);
 const lineDistance = value => Math.abs(value - Math.round(value));
 
 export function composeField(s) {
-  const random = randomSource(`field-v1:${s.seed}:${s.style}`);
+  const styles = STYLES.filter(([id]) => id !== 'any').map(([id]) => id);
+  const style = s.style === 'any' && s.fieldVersion !== 1
+    ? styles[Math.floor(randomSource(`style-v1:${s.seed}`)() * styles.length)]
+    : s.style;
+  const random = randomSource(`field-v1:${s.seed}:${style}`);
   const pick = list => list[Math.floor(random() * list.length)];
   const range = (a, b) => a + random() * (b - a);
   const layouts = LAYOUTS.slice(1).map(([id]) => id);
   const layout = s.layout === 'auto' ? pick(layouts) : s.layout;
   const plan = {
-    layout, secondary: pick(layouts.filter(id => id !== layout)),
+    style, layout, secondary: pick(layouts.filter(id => id !== layout)),
     frequency: range(1.8, 3.5), spacing: range(2.2, 4.2),
     phase: Array.from({ length: 6 }, () => range(0, TAU)),
     harmonics: Array.from({ length: 4 }, () => [pick([1, 2, 3, 4]), pick([1, 2, 3]), range(.12, .4)]),
     sites: Array.from({ length: 9 }, () => [range(-.1, 1.1), range(-.1, 1.1)]),
-    angular: s.style === 'architectural' || s.style === 'geometric',
-    flowing: s.style === 'botanical' || s.style === 'woven',
+    angular: style === 'architectural' || style === 'geometric',
+    flowing: style === 'botanical' || style === 'woven',
     weirdness: s.weirdnessEnabled ? s.weirdness : 0, detail: s.fineDetail < 30 ? 1 : s.fineDetail < 70 ? 2 : 3,
     accent: pick([2, 3, 4]),
   };
