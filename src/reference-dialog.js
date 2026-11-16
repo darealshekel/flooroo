@@ -57,14 +57,14 @@ export function openReferenceDialog({ settings, textures, icon, renderIcons, app
     timer = setTimeout(() => {
       try {
         const result = referencePattern(image.pixels, corners, { mode: mode(), size: base.tile, seed, candidates: availableBlocks(base.version, base.allowedBlocks) });
-        candidate = normalizeSettings({ ...base, materials: result.materials,
+        candidate = normalizeSettings({ ...base, materials: mode() === 'palette' ? result.materials.slice(0, base.materials.length) : result.materials,
           ...(mode() === 'palette' ? {} : { pattern: 'reference', reference: result.reference, raised: false, editLayer: protectedLayer(base.editLayer) }),
         });
         const floor = generateFloor(candidate), canvas = $('preview'), ctx = canvas.getContext('2d');
         const map = paintMap(floor, textures, Math.min(4, Math.floor(2048 / Math.max(floor.width, floor.depth)))), scale = Math.min(400 / map.width, 400 / map.height);
         ctx.fillStyle = '#181b1e'; ctx.fillRect(0, 0, 400, 400); ctx.imageSmoothingEnabled = false;
         ctx.drawImage(map, (400 - map.width * scale) / 2, (400 - map.height * scale) / 2, map.width * scale, map.height * scale);
-        $('swatches').replaceChildren(...result.materials.map(id => {
+        $('swatches').replaceChildren(...candidate.materials.map(id => {
           const b = availableBlocks(base.version, base.allowedBlocks).find(block => block.id === id), img = document.createElement('img');
           img.src = assetUrl(b.texture); img.alt = b.name; img.title = b.name; return img;
         }));

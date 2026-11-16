@@ -109,6 +109,12 @@ export function convertVersionBlocks(input) {
   return s;
 }
 export const ROLES = ['Foundation', 'Outline', 'Main motif', 'Accent', 'Inlay', 'Light', 'Trim'];
+export const PALETTE_LIMITS = { min: 2, max: ROLES.length };
+
+export function removePaletteSlot(materials, index) {
+  if (materials.length <= PALETTE_LIMITS.min || !Number.isInteger(index) || index < 0 || index >= materials.length) return materials;
+  return materials.filter((_, i) => i !== index);
+}
 
 export function movePaletteSlot(materials, from, to) {
   if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < 0 || from >= materials.length || to >= materials.length || from === to) return materials;
@@ -138,7 +144,7 @@ export const FLOOR_SIZE_LIMITS = { min: 16, max: 1024 };
 export const BLOCK_POOL_LIMITS = { min: 2, max: 16 };
 export const DEFAULTS = { pattern: 'field', fieldVersion: 2, style: 'any', layout: 'auto', palette: 'amethyst', paletteMode: 'keep', weirdness: 25, weirdnessEnabled: true, shapeScale: 100, fineDetail: 100, emptySpace: 0, width: 256, depth: 256, tile: 128, detail: 3, symmetry: 8, border: 3, raised: false, seed: '104', materials: null, editLayer: null };
 
-export function randomPalette(seed, version = '1.21', allowed = null) {
+export function randomPalette(seed, version = '1.21', allowed = null, size = PALETTE_LIMITS.max) {
   const random = randomSource(`palette-v2:${seed}`);
   let pool = availableBlocks(version, allowed);
   if (!pool.length) throw new Error('Select at least one compatible block.');
@@ -168,7 +174,7 @@ export function randomPalette(seed, version = '1.21', allowed = null) {
     const id = matching.length ? pick(matching).id : closestBlock(pick(ids), candidates);
     used.add(id);
     return id;
-  });
+  }).slice(0, Number.isInteger(size) ? Math.max(PALETTE_LIMITS.min, Math.min(PALETTE_LIMITS.max, size)) : PALETTE_LIMITS.max);
 }
 
 export function nextDesign(input, seed) {
@@ -176,7 +182,7 @@ export function nextDesign(input, seed) {
   return normalizeSettings({ ...s, seed, pattern: 'field', reference: null, fieldVersion: 2,
     editLayer: protectedLayer(s.editLayer),
     layout: LAYOUTS.some(([id]) => id === s.layout) ? s.layout : 'auto',
-    ...(s.paletteMode === 'random' ? { palette: 'random', materials: randomPalette(seed, s.version, s.allowedBlocks) } : {}),
+    ...(s.paletteMode === 'random' ? { palette: 'random', materials: randomPalette(seed, s.version, s.allowedBlocks, s.materials.length) } : {}),
   });
 }
 
@@ -211,7 +217,8 @@ export function normalizeSettings(input = {}) {
   s.raised = s.raised === true;
   s.seed = String(s.seed ?? '1472').slice(0, 32);
   const fallback = s.palette === 'random' ? randomPalette(s.seed, s.version, s.allowedBlocks) : compatiblePalette(PALETTES.find(p => p.id === s.palette).colors, s.version, s.allowedBlocks);
-  s.materials = fallback.map((id, i) => typeof s.materials?.[i] === 'string' && Object.hasOwn(BY_ID, s.materials[i]) ? s.materials[i] : id);
+  const size = Array.isArray(s.materials) && s.materials.length ? Math.max(PALETTE_LIMITS.min, Math.min(PALETTE_LIMITS.max, s.materials.length)) : PALETTE_LIMITS.max;
+  s.materials = fallback.slice(0, size).map((id, i) => typeof s.materials?.[i] === 'string' && Object.hasOwn(BY_ID, s.materials[i]) ? s.materials[i] : id);
   s.editLayer = normalizeLayer(s.editLayer, s.tile, BLOCKS.length);
   return s;
 }

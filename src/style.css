@@ -80,10 +80,15 @@ input[type=range]:disabled { opacity: .35; cursor: not-allowed; }
 .segmented button[aria-pressed=true] { background: #fff; color: #282b30; box-shadow: 0 1px 3px #18202b12; }
 .palette-choice { display: flex; gap: 8px; margin-top: 12px; }
 .palette-choice select { flex: 1; min-width: 0; }
-.palette-swatches { display: grid; grid-template-columns: repeat(7,minmax(0,1fr)); gap: 4px; margin: 16px 0; }
-.palette-swatches button { position: relative; padding: 0; aspect-ratio: 1; border-radius: 2px; cursor: grab; touch-action: pan-y; user-select: none; }
+.palette-swatches { display: grid; grid-template-columns: repeat(4,minmax(0,64px)); gap: 8px; margin: 16px 0; }
+.palette-slot { position: relative; aspect-ratio: 1; min-width: 0; }
+.palette-swatches [data-role] { position: relative; display: block; width: 100%; height: 100%; padding: 0; border-radius: 2px; cursor: grab; touch-action: none; user-select: none; }
 .palette-swatches img { width: 100%; height: 100%; display: block; image-rendering: pixelated; border-radius: 2px; }
-.palette-swatches span { position: absolute; right: 2px; bottom: 2px; background: #111c; color: #fff; font-size: 10px; min-width: 12px; }
+.palette-swatches [data-role] span { position: absolute; left: 2px; bottom: 2px; background: #111c; color: #fff; font-size: 10px; min-width: 12px; }
+.palette-remove { position: absolute; right: 0; top: 0; width: 24px; height: 24px; padding: 0; display: grid; place-items: center; border-radius: 0 2px 0 4px; background: #181b1e; color: #fff; }
+.palette-remove svg { width: 14px; height: 14px; }
+.palette-remove:disabled { opacity: 1; color: #89929a; }
+#add-palette-block { aspect-ratio: 1; padding: 0; display: grid; place-items: center; border: 1px dashed var(--line); border-radius: 2px; color: var(--muted); }
 .palette-swatches .palette-drag-source { opacity: .35; }
 .palette-swatches.palette-dragging, .palette-swatches.palette-dragging button { cursor: grabbing; }
 .palette-drop-before::before, .palette-drop-after::after { content: ''; position: absolute; top: -4px; bottom: -4px; width: 3px; background: var(--accent); border-radius: 2px; }
@@ -270,7 +275,8 @@ dialog::backdrop { background: #11151b80; }
   input:hover, select:hover { border-color: #919ba2; }
   .design-candidate:hover { background: transparent; }
   .design-candidate:hover canvas { border-color: var(--accent); }
-  .palette-swatches button:hover { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .palette-swatches button:not(:disabled):hover { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .palette-remove:not(:disabled):hover { background: #933f3f; color: #fff; }
   :root[data-theme=dark] .primary-button:not(:disabled):hover { background: #2d7b63; }
   :root[data-theme=dark] .inspector-tabs button:hover { color: #e5e9ed; }
 }
@@ -310,7 +316,6 @@ html[data-input=keyboard] *, html[data-input=keyboard] *::after { transition: no
   .control-section, .materials-panel { padding: 20px; }
   .setting-row > select { width: 60%; }
   .settings-footer { margin-top: 12px; }
-  .palette-swatches { grid-template-columns: repeat(7,minmax(0,40px)); gap: 8px; }
   .design-candidates { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
   dialog { padding: 20px; }
   .library-filters { grid-template-columns: 1fr; gap: 8px; }

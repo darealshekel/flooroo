@@ -1,5 +1,5 @@
 import { createIcons, Sun, Moon, Pickaxe, Download, Undo2, Redo2, Shuffle, ChevronDown, Plus, Minus, Maximize, Grid2X2, Box, Layers, ArrowUpRight, X, Check, Image as ImageIcon, FileJson, FolderOpen, Search, RotateCcw, FileDown, LoaderCircle, Hand, Paintbrush, Minus as LineIcon, PaintBucket, Replace, ShieldCheck, ShieldOff, Eraser, Eye, Trash2 } from 'lucide';
-import { BLOCKS, BY_ID, ROLES, PALETTES, PATTERNS, STYLES, LAYOUTS, TILE_SIZES, FLOOR_SIZE_LIMITS, BLOCK_POOL_LIMITS, normalizeSettings, randomPalette, nextDesign, availableBlocks, supportsBlock, compatiblePalette, convertVersionBlocks, movePaletteSlot } from './catalog.js';
+import { BLOCKS, BY_ID, ROLES, PALETTES, PATTERNS, STYLES, LAYOUTS, TILE_SIZES, FLOOR_SIZE_LIMITS, BLOCK_POOL_LIMITS, PALETTE_LIMITS, normalizeSettings, randomPalette, nextDesign, availableBlocks, supportsBlock, compatiblePalette, convertVersionBlocks, movePaletteSlot, removePaletteSlot } from './catalog.js';
 import { bindPaletteReorder } from './palette-reorder.js';
 import { VERSIONS, getVersion } from './versions.js';
 import { assetUrl } from './assets.js';
@@ -32,7 +32,7 @@ let tool = 'pan', stroke, strokeFrame, pickerTarget = 'palette', autosaveWarning
 let selectedBlocks = new Set(), savedPalettes = [];
 try {
   const stored = JSON.parse(localStorage.getItem('mmm-floor-palettes'));
-  if (Array.isArray(stored)) savedPalettes = stored.filter(p => typeof p?.name === 'string' && p.name.length <= 40 && Array.isArray(p.materials) && p.materials.length === 7 && p.materials.every(id => Object.hasOwn(BY_ID, id))).slice(0, 30);
+  if (Array.isArray(stored)) savedPalettes = stored.filter(p => typeof p?.name === 'string' && p.name.length <= 40 && Array.isArray(p.materials) && p.materials.length >= PALETTE_LIMITS.min && p.materials.length <= PALETTE_LIMITS.max && p.materials.every(id => Object.hasOwn(BY_ID, id))).slice(0, 30);
 } catch { /* A damaged palette library must not prevent opening the saved floor. */ }
 
 $('app').innerHTML = `
@@ -213,7 +213,7 @@ function syncControls() {
   if (!supportsBlock(paintBlock, settings.version)) paintBlock = availableBlocks(settings.version)[0].id;
   $('paint-block').querySelector('img').src = assetUrl(BY_ID[paintBlock].texture);
   $('paint-block').querySelector('span').textContent = BY_ID[paintBlock].name;
-  const savedIndex = savedPalettes.findIndex(p => p.materials.every((id, i) => id === settings.materials[i]));
+  const savedIndex = savedPalettes.findIndex(p => p.materials.length === settings.materials.length && p.materials.every((id, i) => id === settings.materials[i]));
   if (savedIndex >= 0) $('palette').value = `saved:${savedIndex}`;
   $('delete-palette').disabled = savedIndex < 0;
   const locked = settings.editLayer.cells.filter(isProtected).length;
@@ -226,7 +226,10 @@ function syncControls() {
 }
 function renderMaterials() {
   const list = [...floor.counts].sort((a, b) => b[1] - a[1]);
-  $('swatches').innerHTML = settings.materials.map((id, i) => `<button data-role="${i}" title="${ROLES[i]}: ${BY_ID[id].name}. Drag to reorder; click to edit. Alt + Left/Right to move." aria-label="Change ${ROLES[i].toLowerCase()} block: ${BY_ID[id].name}" aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight"><img src="${assetUrl(BY_ID[id].texture)}" alt="" draggable="false"><span>${i + 1}</span></button>`).join('');
+  const minimum = settings.materials.length <= PALETTE_LIMITS.min;
+  const maximum = settings.materials.length >= PALETTE_LIMITS.max;
+  $('swatches').innerHTML = settings.materials.map((id, i) => `<div class="palette-slot"><button data-role="${i}" title="${ROLES[i]}: ${BY_ID[id].name}. Drag to reorder; click to edit. Alt + Left/Right to move." aria-label="Change ${ROLES[i].toLowerCase()} block: ${BY_ID[id].name}" aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight"><img src="${assetUrl(BY_ID[id].texture)}" alt="" draggable="false"><span>${i + 1}</span></button><button class="palette-remove" data-remove-role="${i}" aria-label="Remove ${BY_ID[id].name} from palette" title="${minimum ? 'A palette needs at least 2 blocks' : `Remove ${BY_ID[id].name}`}" ${minimum ? 'disabled' : ''}>${icon('x')}</button></div>`).join('') + `<button id="add-palette-block" title="${maximum ? 'All 7 palette positions are filled' : 'Add a block'}" aria-label="Add palette block" ${maximum ? 'disabled' : ''}>${icon('plus')}</button>`;
+  renderIcons();
   $('material-list').innerHTML = list.map(([id, count]) => `<div class="material-row"><img src="${assetUrl(BY_ID[id].texture)}" alt=""><div class="material-name"><strong>${BY_ID[id].name}</strong><span>${Math.floor(count / 64)} stacks${count % 64 ? ` + ${count % 64}` : ''}</span></div><span class="material-quantity">${fmt(count)}</span></div>`).join('');
   $('total-blocks').textContent = fmt(floor.total);
   $('floor-total-summary').textContent = `${fmt(floor.total)} blocks`;
@@ -236,8 +239,7 @@ function renderMaterials() {
   $('repeats').textContent = `${(settings.width / settings.tile).toFixed(2).replace(/\.00$/, '')} × ${(settings.depth / settings.tile).toFixed(2).replace(/\.00$/, '')}`;
   $('material-count').textContent = list.length;
   $('crop-note').hidden = settings.width % settings.tile === 0 && settings.depth % settings.tile === 0;
-  const preset = PALETTES.find(p => p.id === settings.palette);
-  $('palette-type').textContent = !preset ? 'Generated' : settings.materials.every((id, i) => id === preset.colors[i]) ? '7 slots' : 'Custom';
+  $('palette-type').textContent = `${settings.materials.length} blocks`;
 }
 function update(record = true) {
   cancelPaletteDrag();
@@ -353,10 +355,10 @@ $('raised').addEventListener('change', e => { settings.raised = e.target.checked
 $('palette').addEventListener('change', e => {
   const saved = e.target.value.startsWith('saved:') ? savedPalettes[Number(e.target.value.slice(6))] : null;
   settings.palette = saved ? 'amethyst' : e.target.value;
-  settings.materials = saved ? compatiblePalette(saved.materials, settings.version, settings.allowedBlocks) : settings.palette === 'random' ? randomPalette(freshSeed(), settings.version, settings.allowedBlocks) : null;
+  settings.materials = saved ? compatiblePalette(saved.materials, settings.version, settings.allowedBlocks) : settings.palette === 'random' ? randomPalette(freshSeed(), settings.version, settings.allowedBlocks, settings.materials.length) : null;
   update();
 });
-$('random-palette').addEventListener('click', () => { settings.palette = 'random'; settings.materials = randomPalette(freshSeed(), settings.version, settings.allowedBlocks); update(); });
+$('random-palette').addEventListener('click', () => { settings.palette = 'random'; settings.materials = randomPalette(freshSeed(), settings.version, settings.allowedBlocks, settings.materials.length); update(); });
 $('version').addEventListener('change', e => {
   const previousPool = settings.allowedBlocks;
   settings.version = e.target.value; update();
@@ -378,7 +380,7 @@ $('save-palette').addEventListener('click', () => {
   if (storePalettes([...savedPalettes, { name, materials: [...settings.materials] }])) { $('palette-name').value = ''; toast('Palette saved.'); }
 });
 $('delete-palette').addEventListener('click', () => {
-  const index = savedPalettes.findIndex(p => p.materials.every((id, i) => id === settings.materials[i]));
+  const index = savedPalettes.findIndex(p => p.materials.length === settings.materials.length && p.materials.every((id, i) => id === settings.materials[i]));
   if (index >= 0 && storePalettes(savedPalettes.filter((_, i) => i !== index))) toast('Saved palette removed. Current floor unchanged.');
 });
 function libraryMatches() {
@@ -514,10 +516,11 @@ $('grid').addEventListener('click', () => { preview.grid = !preview.grid; $('gri
 
 function blockPicker() {
   $('palette-position-row').hidden = pickerTarget !== 'palette';
+  $('palette-position').innerHTML = settings.materials.map((_, i) => `<option value="${i}">${i + 1}. ${ROLES[i]}</option>`).join('');
   $('palette-position').value = String(roleToEdit);
   const term = $('block-search').value.trim().toLowerCase();
   const matches = availableBlocks(settings.version).filter(b => `${b.name} ${b.id} ${(b.aliases || []).join(' ')}`.toLowerCase().includes(term));
-  const selected = pickerTarget === 'paint' ? paintBlock : settings.materials[roleToEdit];
+  const selected = pickerTarget === 'paint' ? paintBlock : pickerTarget === 'palette' ? settings.materials[roleToEdit] : null;
   $('block-picker').innerHTML = matches.length ? matches.map(b => `<button data-block="${b.id}" aria-pressed="${selected === b.id}"><img class="block-${b.shape || 'cube'}" src="${assetUrl(b.texture)}" alt=""><span>${b.name}</span>${selected === b.id ? icon('check') : ''}</button>`).join('') : '<p class="empty-result">No matching blocks.</p>';
   renderIcons();
 }
@@ -539,6 +542,22 @@ $('palette-position').addEventListener('change', event => {
   blockPicker();
 });
 $('swatches').addEventListener('click', e => {
+  const remove = e.target.closest('[data-remove-role]');
+  if (remove) {
+    const index = Number(remove.dataset.removeRole), materials = removePaletteSlot(settings.materials, index);
+    if (materials === settings.materials) return;
+    const name = BY_ID[settings.materials[index]].name;
+    settings.materials = materials; update();
+    $('palette-move-status').textContent = `${name} removed. ${materials.length} blocks in palette.`;
+    const next = Math.min(index, materials.length - 1);
+    $('swatches').querySelector(materials.length > PALETTE_LIMITS.min ? `[data-remove-role="${next}"]` : `[data-role="${next}"]`).focus({ preventScroll: true });
+    return;
+  }
+  if (e.target.closest('#add-palette-block')) {
+    if (settings.materials.length >= PALETTE_LIMITS.max) return;
+    pickerTarget = 'add'; $('material-role').textContent = 'New palette block'; $('block-search').value = '';
+    blockPicker(); $('material-dialog').showModal(); $('block-search').focus(); return;
+  }
   const button = e.target.closest('[data-role]'); if (!button) return;
   pickerTarget = 'palette';
   roleToEdit = Number(button.dataset.role); $('material-role').textContent = ROLES[roleToEdit]; $('block-search').value = ''; blockPicker(); $('material-dialog').showModal(); $('block-search').focus();
@@ -548,6 +567,7 @@ $('paint-block').addEventListener('click', () => { pickerTarget = 'paint'; $('ma
 $('block-picker').addEventListener('click', e => {
   const button = e.target.closest('[data-block]'); if (!button) return;
   if (pickerTarget === 'paint') { paintBlock = button.dataset.block; $('paint-block').querySelector('img').src = assetUrl(BY_ID[paintBlock].texture); $('paint-block').querySelector('span').textContent = BY_ID[paintBlock].name; }
+  else if (pickerTarget === 'add') { if (settings.materials.length < PALETTE_LIMITS.max) { settings.materials.push(button.dataset.block); update(); } }
   else { settings.materials[roleToEdit] = button.dataset.block; update(); }
   $('material-dialog').close();
 });

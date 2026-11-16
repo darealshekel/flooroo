@@ -80,7 +80,7 @@ export async function checkPaletteOrder(page, name) {
     });
     try {
       await touch('touchStart', a.x + a.width / 2, a.y + a.height / 2);
-      for (let step = 1; step <= 12; step++) await touch('touchMove', a.x + a.width / 2 + (b.x - a.x) * step / 12, a.y + a.height / 2);
+      for (let step = 1; step <= 12; step++) await touch('touchMove', a.x + a.width / 2 + (b.x - a.x) * step / 12, a.y + a.height / 2 + (b.y - a.y) * step / 12);
       await touch('touchEnd');
       assert.deepEqual((await stored()).materials, [palette[6], ...palette.slice(0, 6)], 'Real touch drag reorders');
       await page.locator('#undo').click();
@@ -118,6 +118,77 @@ export async function checkPaletteOrder(page, name) {
   console.log(`${name}: palette mouse/keyboard/touch moves, cancellation, undo, picker, saved order, reload passed`);
 }
 
+export async function checkPaletteSize(page, name) {
+  const stored = () => page.evaluate(() => JSON.parse(localStorage.getItem('mmm-floor-v3')));
+  const swatches = page.locator('#swatches [data-role]');
+  const imported = normalizeSettings({ tile: 32, width: 64, depth: 64, materials: ['stone', 'quartz_block', 'gold_block', 'black_concrete', 'purpur_block', 'sea_lantern', 'red_concrete'] });
+  await page.locator('#import-file').setInputFiles({ name: 'small-palette.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ format: 'flooroo', version: 4, settings: imported })) });
+  await page.locator('#tab-blocks').click();
+  assert.equal(await page.locator('#add-palette-block').isDisabled(), true);
+  for (let length = 7; length > 2; length--) {
+    const remove = page.locator('#swatches [data-remove-role="2"]');
+    if (name === 'mobile') await remove.tap(); else await remove.click();
+    assert.equal((await stored()).materials.length, length - 1);
+    assert.equal(await swatches.count(), length - 1);
+    assert.equal(await page.locator('#material-dialog').isVisible(), false, 'Delete cannot open the picker');
+  }
+  assert.deepEqual((await stored()).materials, ['stone', 'quartz_block']);
+  assert.equal(await page.locator('#palette-type').innerText(), '2 blocks');
+  assert.equal(await page.locator('#swatches [data-remove-role]:disabled').count(), 2);
+  await page.locator('#undo').click(); assert.equal(await swatches.count(), 3);
+  await page.locator('#redo').click(); assert.equal(await swatches.count(), 2);
+  const small = await stored();
+  await page.locator('#add-palette-block').click();
+  assert.equal(await page.locator('#palette-position-row').isVisible(), false);
+  await page.locator('[data-close="material-dialog"]').click();
+  assert.deepEqual(await stored(), small, 'Cancelling add does not change the palette');
+  await page.locator('#palette-name').fill('Two blocks'); await page.locator('#save-palette').click();
+  const savedOption = await page.locator('#palette').inputValue();
+  for (const id of ['gold_block', 'black_concrete', 'purpur_block', 'sea_lantern', 'red_concrete']) {
+    await page.locator('#add-palette-block').click();
+    await page.locator('#block-search').fill(id);
+    await page.locator(`[data-block="${id}"]`).click();
+    assert.equal((await stored()).materials.at(-1), id);
+    assert.equal(await page.locator('#delete-palette').isDisabled(), true, 'A longer palette is not a saved-prefix match');
+  }
+  assert.equal(await page.locator('#add-palette-block').isDisabled(), true);
+  await page.locator('#undo').click(); assert.equal(await swatches.count(), 6);
+  await page.locator('#redo').click(); assert.equal(await swatches.count(), 7);
+  await page.locator('#palette').selectOption(savedOption);
+  assert.deepEqual((await stored()).materials, small.materials);
+  await page.locator('#swatches [data-role="0"]').click();
+  assert.equal(await page.locator('#palette-position option').count(), 2);
+  await page.locator('#palette-position').selectOption('1');
+  await page.locator('[data-close="material-dialog"]').click();
+  assert.deepEqual((await stored()).materials, ['quartz_block', 'stone']);
+  await page.locator('#generate').click();
+  assert.deepEqual((await stored()).materials, ['quartz_block', 'stone']);
+  await page.locator('#random-palette').click(); assert.equal((await stored()).materials.length, 2);
+  await page.locator('[data-palette-mode="random"]').click(); await page.locator('#generate').click();
+  assert.equal((await stored()).materials.length, 2);
+  await page.locator('#palette').selectOption(savedOption);
+  await page.reload(); await page.locator('#loading').waitFor({ state: 'hidden' });
+  await page.locator('#tab-blocks').click();
+  assert.deepEqual((await stored()).materials, small.materials);
+  assert.equal(await page.locator('#delete-palette').isDisabled(), false, 'Two-block named palette survives reload');
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await page.screenshot({ path: fileURLToPath(new URL(`../test-results/palette-two-blocks-${name}.png`, import.meta.url)), fullPage: true });
+  await page.locator('#view-3d').click();
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('#three-container canvas');
+    const gl = canvas?.getContext('webgl2');
+    if (!gl) return false;
+    const pixels = new Uint8Array(gl.drawingBufferWidth * gl.drawingBufferHeight * 4);
+    gl.readPixels(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+    let visible = 0;
+    for (let i = 3; i < pixels.length; i += 4) if (pixels[i]) visible++;
+    return visible > 10000;
+  });
+  await page.screenshot({ path: fileURLToPath(new URL(`../test-results/palette-two-blocks-${name}-3d.png`, import.meta.url)), fullPage: true });
+  await page.locator('#view-top').click();
+  console.log(`${name}: remove to two, minimum guard, add/cancel, undo, saved palette, random size, reload and 3D passed`);
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const browser = await chromium.launch({ headless: true });
   try {
@@ -127,6 +198,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       await page.goto(process.env.PREVIEW_URL || 'http://127.0.0.1:4406');
       await page.locator('#loading').waitFor({ state: 'hidden' });
       await checkPaletteOrder(page, name);
+      await checkPaletteSize(page, name);
       assert.deepEqual(errors, []); await page.close();
     }
   } finally { await browser.close(); }

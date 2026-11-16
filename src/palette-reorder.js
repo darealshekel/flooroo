@@ -23,8 +23,8 @@ export function bindPaletteReorder(element, onMove) {
     const bounds = element.getBoundingClientRect();
     if (x < bounds.left || x > bounds.right || y < bounds.top - 12 || y > bounds.bottom + 12) return -1;
     return buttons().reduce((nearest, button, index, all) => {
-      const center = item => { const r = item.getBoundingClientRect(); return r.left + r.width / 2; };
-      return Math.abs(x - center(button)) < Math.abs(x - center(all[nearest])) ? index : nearest;
+      const distance = item => { const r = item.getBoundingClientRect(); return Math.hypot(x - r.left - r.width / 2, y - r.top - r.height / 2); };
+      return distance(button) < distance(all[nearest]) ? index : nearest;
     }, 0);
   }
 
@@ -40,7 +40,7 @@ export function bindPaletteReorder(element, onMove) {
     if (!drag || event.pointerId !== drag.pointerId) return;
     if (!drag.ghost) {
       const dx = Math.abs(event.clientX - drag.x), dy = Math.abs(event.clientY - drag.y);
-      if (Math.max(dx, dy) < 6 || (event.pointerType === 'touch' && dy > dx)) return;
+      if (Math.max(dx, dy) < 6) return;
       const rect = drag.button.getBoundingClientRect();
       drag.size = rect.width;
       drag.ghost = drag.button.querySelector('img').cloneNode();

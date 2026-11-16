@@ -18,6 +18,8 @@ export function generateTile(input) {
   for (let i = 0; i < tile.cells.length; i++) {
     const role = tile.cells[i];
     heights[i] = s.raised ? role === 5 ? 3 : [2, 3, 6].includes(role) ? 2 : 1 : 1;
+    // Generators keep seven geometry roles; smaller palettes reuse their blocks.
+    tile.cells[i] = role % s.materials.length;
     const code = s.editLayer.cells[i];
     if (code) {
       const { block, height } = decodeCell(code), id = BLOCKS[block].id;
@@ -152,7 +154,7 @@ export function generateFloor(input) {
     const tx = Math.floor(x + ox) % s.tile, tz = Math.floor(z + oz) % s.tile;
     let role = tile.cells[tz * s.tile + tx];
     const edge = Math.min(x, z, s.width - 1 - x, s.depth - 1 - z);
-    if (edge < s.border) role = edge === 0 ? 1 : edge === s.border - 1 ? 6 : 2;
+    if (edge < s.border) role = (edge === 0 ? 1 : edge === s.border - 1 ? 6 : 2) % s.materials.length;
     cells[i] = role;
     const h = edge >= s.border ? tile.heights[tz * s.tile + tx] : 1;
     heights[i] = h;

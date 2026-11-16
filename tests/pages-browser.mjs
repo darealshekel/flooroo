@@ -7,7 +7,7 @@ import { read } from 'nbtify';
 import { normalizeSettings } from '../src/catalog.js';
 import { composeField } from '../src/fields.js';
 import { checkReferenceImport } from './reference-browser.mjs';
-import { checkPaletteOrder } from './palette-order-browser.mjs';
+import { checkPaletteOrder, checkPaletteSize } from './palette-order-browser.mjs';
 import { checkExpandedCatalog } from './expanded-catalog-browser.mjs';
 
 const output = new URL('../test-results/', import.meta.url);
@@ -132,6 +132,7 @@ try {
     await page.locator('#loading').waitFor({ state: 'hidden' });
     await checkReferenceImport(page, name);
     await checkPaletteOrder(page, name);
+    await checkPaletteSize(page, name);
     await checkExpandedCatalog(page, name);
     assert.deepEqual(problems, []);
     await context.close();
