@@ -1,0 +1,13 @@
+node_modules/
+dist/
+test-results/
+*.log
+.cache/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+desktop-preview.png
+.DS_Store
+Thumbs.db

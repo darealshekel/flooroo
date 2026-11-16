@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#181b1e" />
+    <meta name="description" content="Design and edit patterned Minecraft floors with real block palettes and schematic exports." />
+    <title>flooroo | Minecraft floor designer</title>
+    <link rel="icon" href="data:," />
+    <style>html { background: #181b1e; color-scheme: dark; } html[data-theme="light"] { background: #f7f8f9; color-scheme: light; }</style>
+    <script>
+      try {
+        if (localStorage.getItem('flooroo-theme') === 'light') {
+          document.documentElement.dataset.theme = 'light';
+          document.querySelector('meta[name="theme-color"]').content = '#f7f8f9';
+        }
+      } catch { /* Dark mode also works when browser storage is unavailable. */ }
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
