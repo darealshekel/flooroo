@@ -24,7 +24,8 @@ export class FloorScene {
     this.observer = new ResizeObserver(() => this.resize()); this.observer.observe(container);
   }
   update(data, textures) {
-    this.data = data;
+    if (this.data === data) { this.resize(); return; }
+    this.data = null;
     for (const mesh of [...this.group.children]) { mesh.dispose(); this.group.remove(mesh); }
     const groups = new Map();
     data.cells.forEach((role, i) => { const id = data.materials[role]; if (!groups.has(id)) groups.set(id, []); groups.get(id).push(i); });
@@ -59,7 +60,7 @@ export class FloorScene {
       });
       mesh.instanceMatrix.needsUpdate = true; mesh.computeBoundingSphere(); this.group.add(mesh);
     }
-    this.fit();
+    this.data = data; this.fit();
   }
   fit() {
     const size = Math.max(this.data?.width || 64, this.data?.depth || 64);

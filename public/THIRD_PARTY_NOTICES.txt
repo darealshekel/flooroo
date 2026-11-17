@@ -3,7 +3,8 @@ flooroo - Third-party notices
 Minecraft artwork and game metadata
 ----------------------------------
 Minecraft is a trademark of Mojang/Microsoft. The vanilla block textures
-in textures/ belong to Mojang/Microsoft, not the flooroo author. They are
+in textures/ and the derived block-tops atlas belong to Mojang/Microsoft,
+not the flooroo author. They are
 used to identify and preview blocks in this unofficial floor-design tool.
 No Minecraft client archive, executable or game code is included.
 https://www.minecraft.net/en-us/usage-guidelines

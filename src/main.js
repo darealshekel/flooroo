@@ -4,7 +4,7 @@ import { bindPaletteReorder } from './palette-reorder.js';
 import { VERSIONS, getVersion } from './versions.js';
 import { assetUrl } from './assets.js';
 import { generateFloor, generateTile } from './generator.js';
-import { FlatPreview, loadTextures, paintMap } from './preview.js';
+import { FlatPreview, loadTextures, paintMap, textureCache } from './preview.js';
 import { download, exportLitematic, exportLegacySchematic, incompatibleBlocks, materialCsv } from './export.js';
 import { LOCK, isProtected, brushIndices, mirrorPoints, regionIndices, editCells, protectedLayer } from './editing.js';
 import './style.css';
@@ -22,7 +22,8 @@ try {
   settings = normalizeSettings(saved ? { ...saved, fieldVersion: saved.fieldVersion ?? 1 }
     : previous ? { ...previous, pattern: 'field', fieldVersion: 1, layout: 'auto' } : undefined);
 } catch { settings = normalizeSettings(); }
-let floor, textures = {}, scene, view = 'top', scope = 'floor', roleToEdit = 0;
+let floor, textures = textureCache, scene, view = 'top', scope = 'floor', roleToEdit = 0;
+let sceneModulePromise, scenePromise, viewRequest = 0;
 let candidateSettings = [];
 const freshSeed = () => String(crypto.getRandomValues(new Uint32Array(1))[0]);
 const history = [JSON.stringify(settings)]; let historyIndex = 0;
@@ -180,9 +181,10 @@ function displayedData() {
 }
 function updatePreview() {
   const data = displayedData();
+  preview.showProtected = scope === 'tile' && $('show-protected').getAttribute('aria-pressed') === 'true';
   preview.update(data, textures);
-  preview.showProtected = scope === 'tile' && $('show-protected').getAttribute('aria-pressed') === 'true'; preview.draw();
-  if (scene && view === '3d') scene.update(data, textures);
+  if (view === '3d') void render3D(data);
+  else if (textures.topAtlas) void loadTextures(data.materials).catch(() => {});
   $('view-label').textContent = view === '3d' ? 'PERSPECTIVE / XYZ' : 'TOP / XZ';
   $('zoom-value').textContent = `${Math.round((view === '3d' ? scene?.camera.zoom || 1 : preview.zoom) * 100)}%`;
 }
@@ -494,19 +496,48 @@ document.addEventListener('keydown', e => {
   e.preventDefault(); moveHistory(key === 'z' && !e.shiftKey ? -1 : 1);
 });
 
-async function setView(next) {
-  if (next === '3d') {
-    try {
-      if (!Object.keys(textures).length) return toast('Block textures are still loading.');
-      if (!scene) { const { FloorScene } = await import('./scene.js'); scene = new FloorScene($('three-container'), zoom => { if (view === '3d') $('zoom-value').textContent = `${Math.round(zoom * 100)}%`; }); }
-    } catch (error) { console.error(error); toast('3D is unavailable in this browser. Top view and exports still work.'); return; }
-  }
+function loadSceneModule() {
+  return sceneModulePromise ||= import('./scene.js').catch(error => { sceneModulePromise = null; throw error; });
+}
+function getScene() {
+  return scenePromise ||= loadSceneModule().then(({ FloorScene }) => {
+    scene = new FloorScene($('three-container'), zoom => { if (view === '3d') $('zoom-value').textContent = `${Math.round(zoom * 100)}%`; });
+    return scene;
+  }).catch(error => { scenePromise = null; throw error; });
+}
+function setPreviewBusy(busy, message = 'Loading block textures') {
+  $('loading').hidden = !busy;
+  $('loading').lastElementChild.textContent = message;
+  $('viewport').setAttribute('aria-busy', String(busy));
+  $('view-3d').setAttribute('aria-busy', String(busy && view === '3d'));
+  for (const id of ['zoom-in', 'zoom-out', 'fit']) $(id).disabled = busy && view === '3d';
+}
+async function render3D(data) {
+  const request = ++viewRequest;
+  if (scene?.data === data) { scene.resize(); setPreviewBusy(false); return; }
+  setPreviewBusy(true, 'Preparing 3D view');
+  try {
+    await Promise.all([getScene(), loadTextures(data.materials)]);
+    // Give the loading state a paint before building a potentially large floor.
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    if (request !== viewRequest || view !== '3d') return;
+    scene.update(data, textures);
+    $('zoom-value').textContent = `${Math.round(scene.camera.zoom * 100)}%`;
+  } catch (error) {
+    if (request !== viewRequest || view !== '3d') return;
+    console.error(error); setView('top'); setPreviewBusy(false);
+    toast('3D could not load. Top view still works; select 3D to retry.');
+  } finally { if (request === viewRequest) setPreviewBusy(false); }
+}
+function setView(next) {
+  ++viewRequest;
   view = next;
   if (next === '3d') { tool = 'pan'; syncEditor(); }
   $('floor-canvas').hidden = next !== 'top'; $('three-container').hidden = next !== '3d';
   $('view-top').setAttribute('aria-pressed', next === 'top'); $('view-3d').setAttribute('aria-pressed', next === '3d');
   $('grid').disabled = next === '3d';
-  updatePreview(); if (scene && next === '3d') scene.resize();
+  if (next === 'top') setPreviewBusy(!textures.topAtlas);
+  updatePreview();
 }
 $('view-top').addEventListener('click', () => setView('top'));
 $('view-3d').addEventListener('click', () => setView('3d'));
@@ -606,8 +637,12 @@ $('import-file').addEventListener('change', async e => {
 
 async function initialize() {
   update(false);
-  try { textures = await loadTextures(); update(false); }
+  try {
+    textures = await loadTextures([]); update(false);
+    // Warm the module without creating WebGL or waiting for unrelated catalog textures.
+    void loadSceneModule().catch(() => {});
+  }
   catch (error) { console.error(error); toast('Some textures could not load. Reload to retry.'); }
-  finally { $('loading').hidden = true; }
+  finally { if (view === 'top') setPreviewBusy(false); }
 }
 initialize();

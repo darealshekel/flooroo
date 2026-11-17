@@ -1,18 +1,38 @@
 import { BLOCKS, BY_ID } from './catalog.js';
 import { isProtected, brushIndices } from './editing.js';
 import { assetUrl } from './assets.js';
+import topAtlasUrl from './assets/block-tops.png';
+import topAtlas from './top-textures.json' with { type: 'json' };
 
-export async function loadTextures() {
-  const textures = {};
-  const paths = new Set(BLOCKS.flatMap(block => [block.texture, ...(block.faces || []), ...(block.models || []).flatMap(model => model.elements.flatMap(element => Object.values(element.faces).map(face => face.texture)))]));
-  await Promise.all([...paths].map(async path => {
-    const image = new Image();
-    image.src = assetUrl(path);
-    await image.decode();
-    textures[path] = image;
-  }));
-  for (const block of BLOCKS) textures[block.id] = textures[block.texture];
-  return textures;
+export const textureCache = {};
+const requests = new Map();
+const topIndices = new Map(topAtlas.ids.map((id, index) => [id, index]));
+
+function loadImage(key, url) {
+  if (textureCache[key]) return Promise.resolve(textureCache[key]);
+  if (!requests.has(key)) {
+    const image = new Image(); image.src = url;
+    requests.set(key, image.decode().then(() => textureCache[key] = image).finally(() => requests.delete(key)));
+  }
+  return requests.get(key);
+}
+
+export async function loadTextures(ids = BLOCKS.map(block => block.id)) {
+  const blocks = [...new Set(ids)].map(id => BY_ID[id]);
+  const paths = new Set(blocks.flatMap(block => [block.texture, ...(block.faces || []), ...(block.models || []).flatMap(model => model.elements.flatMap(element => Object.values(element.faces).map(face => face.texture)))]));
+  await Promise.all([loadImage('topAtlas', topAtlasUrl), ...[...paths].map(path => loadImage(path, assetUrl(path)))]);
+  for (const block of blocks) textureCache[block.id] = textureCache[block.texture];
+  return textureCache;
+}
+
+function drawBlock(ctx, id, textures, x, y, size) {
+  const index = topIndices.get(id);
+  if (textures.topAtlas && index !== undefined) {
+    ctx.drawImage(textures.topAtlas, index % topAtlas.columns * topAtlas.size, Math.floor(index / topAtlas.columns) * topAtlas.size, topAtlas.size, topAtlas.size, x, y, size, size);
+  } else if (textures[id]) {
+    const image = textures[id];
+    ctx.drawImage(image, 0, 0, image.width, image.width, x, y, size, size);
+  } else { ctx.fillStyle = BY_ID[id].color; ctx.fillRect(x, y, size, size); }
 }
 
 export function paintMap(data, textures, size = 8, showHeight = false) {
@@ -22,12 +42,7 @@ export function paintMap(data, textures, size = 8, showHeight = false) {
   ctx.imageSmoothingEnabled = false;
   for (let z = 0; z < data.depth; z++) for (let x = 0; x < data.width; x++) {
     const i = z * data.width + x, id = data.materials[data.cells[i]];
-    const image = textures[id];
-    if (image) ctx.drawImage(image, 0, 0, image.width, image.width, x * size, z * size, size, size);
-    else { ctx.fillStyle = BY_ID[id].color; ctx.fillRect(x * size, z * size, size, size); }
-    if (BY_ID[id].shape === 'stairs') {
-      ctx.fillStyle = '#00000030'; ctx.fillRect(x * size, (z + .5) * size, size, size / 2);
-    }
+    drawBlock(ctx, id, textures, x * size, z * size, size);
     if (showHeight && data.heights?.[i] > 1) {
       ctx.fillStyle = '#ffffff35'; ctx.fillRect(x * size, z * size, size, 1);
       ctx.fillStyle = '#00000045'; ctx.fillRect(x * size, (z + 1) * size - 1, size, 1);
@@ -92,9 +107,11 @@ export class FlatPreview {
     return bx >= 0 && bz >= 0 && bx < this.data.width && bz < this.data.depth ? { x: bx, z: bz } : null;
   }
   update(data, textures) {
+    if (this.data === data && this.atlas === textures.topAtlas) { this.draw(); return; }
     // Bound the backing canvas for large floors; block data and exports remain exact.
     const pixelsPerBlock = Math.max(1, Math.min(8, Math.floor(4096 / Math.max(data.width, data.depth))));
-    this.data = data; this.map = paintMap(data, textures, pixelsPerBlock, true);
+    this.data = data; this.textures = textures; this.atlas = textures.topAtlas;
+    this.map = paintMap(data, textures, pixelsPerBlock);
     this.mask = document.createElement('canvas'); this.mask.width = data.width; this.mask.height = data.depth;
     if (data.width === data.settings.tile && data.depth === data.settings.tile) {
       const ctx = this.mask.getContext('2d'); ctx.fillStyle = '#57e6c955';
@@ -102,7 +119,7 @@ export class FlatPreview {
     }
     this.draw();
   }
-  setZoom(value) { this.zoom = Math.min(12, Math.max(.5, value)); this.draw(); this.onZoom(this.zoom); }
+  setZoom(value) { this.zoom = Math.min(64, Math.max(.5, value)); this.draw(); this.onZoom(this.zoom); }
   fit() { this.pan = { x: 0, y: 0 }; this.setZoom(1); }
   draw() {
     if (!this.map) return;
@@ -116,7 +133,18 @@ export class FlatPreview {
     const x = (w - pw) / 2 + this.pan.x, y = (h - ph) / 2 + this.pan.y;
     this.layout = { x, y, bw };
     ctx.shadowColor = '#00000070'; ctx.shadowBlur = 24; ctx.shadowOffsetY = 12;
-    ctx.drawImage(this.map, x, y, pw, ph); ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+    const detailed = bw * dpr > this.map.width / this.data.width;
+    if (!detailed) ctx.drawImage(this.map, x, y, pw, ph);
+    ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+    if (detailed) {
+      // Draw only visible blocks from the full-resolution atlas, never a magnified thumbnail.
+      const left = Math.max(0, Math.floor(-x / bw)), right = Math.min(this.data.width, Math.ceil((w - x) / bw));
+      const top = Math.max(0, Math.floor(-y / bw)), bottom = Math.min(this.data.depth, Math.ceil((h - y) / bw));
+      for (let z = top; z < bottom; z++) for (let bx = left; bx < right; bx++) {
+        const id = this.data.materials[this.data.cells[z * this.data.width + bx]];
+        drawBlock(ctx, id, this.textures, x + bx * bw, y + z * bw, bw, bw);
+      }
+    }
     if (this.showProtected) ctx.drawImage(this.mask, x, y, pw, ph);
     if (this.grid) {
       ctx.beginPath();

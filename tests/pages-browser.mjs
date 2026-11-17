@@ -9,6 +9,7 @@ import { composeField } from '../src/fields.js';
 import { checkReferenceImport } from './reference-browser.mjs';
 import { checkPaletteOrder, checkPaletteSize } from './palette-order-browser.mjs';
 import { checkExpandedCatalog } from './expanded-catalog-browser.mjs';
+import { checkRendering } from './rendering-browser.mjs';
 
 const output = new URL('../test-results/', import.meta.url);
 await mkdir(output, { recursive: true });
@@ -136,6 +137,7 @@ try {
     await checkExpandedCatalog(page, name);
     assert.deepEqual(problems, []);
     await context.close();
+    await checkRendering(browser, url, name, { width, height });
     console.log(`${name}: all four Everything styles, saved-design compatibility, built assets, textures, generation, undo, 528-wide export, 3D, reload passed`);
   }
   console.log(`Pages smoke test passed: ${url}`);
